@@ -1,5 +1,3 @@
----
-
 # Audio File Transcriber
 
 **Offline audio-to-text transcription tool** powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper).  
