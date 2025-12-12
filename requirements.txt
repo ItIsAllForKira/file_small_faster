@@ -1,0 +1,11 @@
+numpy
+faster-whisper
+colorama
+PySide6
+pyinstaller
+pyaudio
+
+
+#  python -m venv file_small_av
+#  Scripts\Activate     или    Scripts\Activate.ps1
+#  pip install -r requirements.txt
