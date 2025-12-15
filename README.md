@@ -1,4 +1,4 @@
-# Audio File Transcriber
+# Audio File Transcriber GUI
 
 **Offline audio-to-text transcription tool** powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper).  
 This desktop application transcribes local audio/video files (MP3, WAV, MP4, etc.) into English text using a local Whisper model—**no internet required after the first launch**.
