@@ -80,6 +80,7 @@ class AudioFileTranscriberApp(QMainWindow):
             self.output_dir = self.base_path
         self.model = None
         self.selected_language_code = "en"
+        self.selected_task = "translate"
         self.transcript_filename = None
         self.running = False
         self.start_time = 0
@@ -106,7 +107,8 @@ class AudioFileTranscriberApp(QMainWindow):
         lang_layout = QHBoxLayout()
         lang_label = QLabel("Language:")
         self.language_combo = QComboBox()
-        self.language_combo.addItems(["English to English", "ANY to English", "Russian to English"])
+        self.language_combo.addItems(["English to English", "ANY to English", "Russian to English", "Russian to Russian"])
+        self.language_combo.currentIndexChanged.connect(self._on_language_mode_changed)
         lang_layout.addWidget(lang_label)
         lang_layout.addWidget(self.language_combo)
         layout.addLayout(lang_layout)
@@ -128,15 +130,35 @@ class AudioFileTranscriberApp(QMainWindow):
         self.start_button.clicked.connect(self.toggle_recording)
         layout.addWidget(self.start_button)
         central_widget.setLayout(layout)
-    def _get_language_code(self):
+    def _get_language_mode(self):
+        """Возвращает (language_code, task) для выбранного режима."""
         selected_text = self.language_combo.currentText()
         if "Auto" in selected_text:
-            return None
-        elif "English" in selected_text:
-            return "en"
-        elif "Russian" in selected_text:
-            return "en"
-        return "en"
+            return None, "transcribe"
+        elif "Russian to Russian" in selected_text:
+            # Транскрибация с русского на русский (без перевода)
+            return "ru", "transcribe"
+        elif "Russian to English" in selected_text:
+            # Транскрибация с русского с переводом на английский
+            return "ru", "translate"
+        elif "English to English" in selected_text:
+            # Транскрибация с английского на английский
+            return "en", "transcribe"
+        # "ANY to English" и прочие варианты: автоопределение языка + перевод
+        return None, "translate"
+    def _get_language_code(self):
+        lang_code, _ = self._get_language_mode()
+        return lang_code
+    def _get_task(self):
+        _, task = self._get_language_mode()
+        return task
+    def _on_language_mode_changed(self):
+        lang_code, task = self._get_language_mode()
+        if task == "transcribe":
+            target = {"ru": "Russian", "en": "English"}.get(lang_code, "source language")
+            self.audio_file_label.setText(f"Select MP4, WAV, MP3 for transcription into {target}:")
+        else:
+            self.audio_file_label.setText("Select MP4, WAV, MP3 for transcription and translation into English:")
     def open_audio_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -180,7 +202,8 @@ class AudioFileTranscriberApp(QMainWindow):
                             self.start_button.setText("STOP")
                             self.status_label.setText("Status: Audio file processing and transcription")
                             self.selected_language_code = self._get_language_code()
-                            self.worker_thread = WorkerThread(self, self.process_audio_file, (self.selected_audio_file, self.selected_language_code))
+                            self.selected_task = self._get_task()
+                            self.worker_thread = WorkerThread(self, self.process_audio_file, (self.selected_audio_file, self.selected_language_code, self.selected_task))
                             self.worker_thread.finished.connect(self.stop_processing_audio_file)
                             self.worker_thread.start()
                             self.timer.start(1000)
@@ -188,8 +211,8 @@ class AudioFileTranscriberApp(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "ERROR", f"Could not read WAV file: {str(e)}")
                     return
-            self.convert_and_process_file(self.selected_audio_file, self._get_language_code())
-    def convert_and_process_file(self, file_path, lang_code):
+            self.convert_and_process_file(self.selected_audio_file, self._get_language_code(), self._get_task())
+    def convert_and_process_file(self, file_path, lang_code, task="translate"):
         self.temp_wav_path = os.path.join(self.output_dir, "temp_converted_16000_mono.wav")
         container = None
         try:
@@ -246,11 +269,13 @@ class AudioFileTranscriberApp(QMainWindow):
         self.running = True
         self.start_button.setText("STOP")
         self.status_label.setText("Status: Audio file processing and transcription")
-        self.worker_thread = WorkerThread(self, self.process_audio_file, (self.temp_wav_path, lang_code))
+        self.selected_language_code = lang_code
+        self.selected_task = task
+        self.worker_thread = WorkerThread(self, self.process_audio_file, (self.temp_wav_path, lang_code, task))
         self.worker_thread.finished.connect(self.stop_processing_audio_file)
         self.worker_thread.start()
         self.timer.start(1000)
-    def process_audio_file(self, file_path, language_code):
+    def process_audio_file(self, file_path, language_code, task="translate"):
         try:
             with open(self.transcript_filename, "a", encoding="utf-8") as transcript_file:
                 with wave.open(file_path, "rb") as wav_file:
@@ -268,7 +293,7 @@ class AudioFileTranscriberApp(QMainWindow):
                         with self.model_lock:
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
-                                segments, info = self.model.transcribe(audio, language=language_code, vad_filter=True)
+                                segments, info = self.model.transcribe(audio, language=language_code, task=task, vad_filter=True)
                         for segment in segments:
                             text = segment.text.strip()
                             if text:
